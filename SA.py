@@ -2,64 +2,7 @@ import math
 import random
 import copy
 import matplotlib.pyplot as plt
-
-# -------------------------
-# PID and Car (same as before)
-# -------------------------
-class PID:
-    def __init__(self, Kp, Ki, Kd):
-        self.Kp = Kp
-        self.Ki = Ki
-        self.Kd = Kd
-        self.prev_error = 0.0
-        self.integral = 0.0
-
-    def reset(self):
-        self.prev_error = 0.0
-        self.integral = 0.0
-
-    def control(self, error, dt):
-        self.integral += error * dt
-        derivative = (error - self.prev_error) / dt if dt > 0 else 0.0
-        output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
-        self.prev_error = error
-        return output
-
-
-class Car:
-    def __init__(self, x=0.0, y=0.0, yaw=0.0, velocity=5.0):
-        self.x = x
-        self.y = y
-        self.yaw = yaw
-        self.velocity = velocity
-        self.L = 2.5  # wheelbase
-
-    def reset(self, x=0.0, y=0.0, yaw=0.0):
-        self.x = x
-        self.y = y
-        self.yaw = yaw
-
-    def update(self, delta, dt):
-        # steering limits
-        delta = max(-math.radians(30), min(math.radians(30), delta))
-        self.x += self.velocity * math.cos(self.yaw) * dt
-        self.y += self.velocity * math.sin(self.yaw) * dt
-        self.yaw += (self.velocity / self.L) * math.tan(delta) * dt
-
-
-# -------------------------
-# Path: semi-elliptical overtaking path
-# returns list of (x,y)
-# -------------------------
-def elliptical_path(a=40, b=4, num_points=300):
-    xs, ys = [], []
-    for t in range(num_points):
-        theta = math.pi * t / (num_points - 1)  # 0..pi
-        x = a * t / (num_points - 1)
-        y = b * math.sin(theta)
-        xs.append(x)
-        ys.append(y)
-    return xs, ys
+from PID import PID, Car, elliptical_path
 
 
 # -------------------------

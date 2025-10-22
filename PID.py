@@ -1,8 +1,10 @@
+# PID.py — cleaned & fixed
 import math
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib import patches  # NEW
+from matplotlib import patches
 
+# ---- Constants ----
 CAR_L = 4.5  # car length (m)
 CAR_W = 1.8  # car width  (m)
 
@@ -18,12 +20,16 @@ class PID:
         self.Kp = Kp
         self.Ki = Ki
         self.Kd = Kd
-        self.prev_error = 0
-        self.integral = 0
+        self.prev_error = 0.0
+        self.integral = 0.0
 
     def control(self, error, dt):
+        # guard dt > 0
+        if dt <= 0:
+            derivative = 0.0
+        else:
+            derivative = (error - self.prev_error) / dt
         self.integral += error * dt
-        derivative = (error - self.prev_error) / dt
         output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
         self.prev_error = error
         return output
@@ -35,7 +41,7 @@ class PID:
 
 # ===== Simple Car Model =====
 class Car:
-    def __init__(self, x=0, y=0, yaw=0, velocity=5.0):
+    def __init__(self, x=0.0, y=0.0, yaw=0.0, velocity=5.0):
         self.x = x
         self.y = y
         self.yaw = yaw
@@ -48,65 +54,72 @@ class Car:
         self.y += self.velocity * math.sin(self.yaw) * dt
         self.yaw += (self.velocity / self.L) * math.tan(delta) * dt
 
-    def reset(self, x=0.0, y=0.0, yaw=0.0):
+    def reset(self, x=0.0, y=0.0, yaw=0.0, velocity=None):
         self.x = x
         self.y = y
         self.yaw = yaw
+        if velocity is not None:
+            self.velocity = velocity
 
+
+# ---- geometry helpers for rotated rectangle (car) ----
 def car_corners(x, y, yaw, length=CAR_L, width=CAR_W):
-    """Return 4 corner points of the car given center (x, y) and yaw."""
+    """Return list of 4 corner points [[x,y],...] of a rectangle centered at (x,y) rotated by yaw."""
     c, s = math.cos(yaw), math.sin(yaw)
     hl, hw = length / 2.0, width / 2.0
     local = [(+hl, +hw), (+hl, -hw), (-hl, -hw), (-hl, +hw)]
-    world = [[x + lx*c - ly*s, y + lx*s + ly*c] for lx, ly in local]
+    world = [[x + lx * c - ly * s, y + lx * s + ly * c] for lx, ly in local]
     return world
 
-# === collision helpers (ADD under car_corners) ===
+
+# === collision helpers ===
 def _proj_interval(pts, ax):
     """Project polygon points onto axis ax=(ax_x, ax_y) -> (min,max)."""
-    vals = [p[0]*ax[0] + p[1]*ax[1] for p in pts]
+    vals = [p[0] * ax[0] + p[1] * ax[1] for p in pts]
     return min(vals), max(vals)
 
+
 def _sat_overlap(polyA, polyB):
-    """Separating Axis Test for two convex quads (our rotated rectangles)."""
+    """Separating Axis Test for two convex quads (rotated rectangles)."""
     for poly in (polyA, polyB):
         for i in range(4):
             p1 = poly[i]
-            p2 = poly[(i+1) % 4]
-            edge = (p2[0]-p1[0], p2[1]-p1[1])
+            p2 = poly[(i + 1) % 4]
+            edge = (p2[0] - p1[0], p2[1] - p1[1])
             # axis = edge normal (perpendicular)
             ax = (-edge[1], edge[0])
-            n = (ax[0]**2 + ax[1]**2) ** 0.5
+            n = math.hypot(ax[0], ax[1])
             if n == 0:
                 continue
-            ax = (ax[0]/n, ax[1]/n)
+            ax = (ax[0] / n, ax[1] / n)
             a_min, a_max = _proj_interval(polyA, ax)
             b_min, b_max = _proj_interval(polyB, ax)
             if a_max < b_min or b_max < a_min:
                 return False  # separated on this axis
     return True  # all axes overlapped -> collision
 
-# === SAT self-test (ADD just under _sat_overlap) ===
+
+# === SAT self-test (optional, safe to run at import) ===
 def _sat_self_test():
-    # two obvious overlaps (should be True), then a clear gap (False)
     A = [[-1, -1], [-1, +1], [+1, +1], [+1, -1]]           # box at origin
     B = [[0.5, -0.5], [0.5, +0.5], [2.5, +0.5], [2.5, -0.5]]  # overlap on right
     C = [[3.0, -0.5], [3.0, +0.5], [4.0, +0.5], [4.0, -0.5]]  # no overlap
     print("[SAT test] A vs B ->", _sat_overlap(A, B), " (expected True)")
     print("[SAT test] A vs C ->", _sat_overlap(A, C), " (expected False)")
 
-# run once at import (safe, just prints)
+
+# run quick test once at import (it's harmless)
 _sat_self_test()
 
 
-# === other cars factory (ADD) ===
+# === other cars factory (returns a function that gives other-car poses at time t) ===
 def straight_traffic_factory(v=4.5, lane_y=0.0, yaw=0.0, n=2, spacing=25.0):
     """
-    Returns a function other_cars_fn(step_idx, t) -> list[(x,y,yaw)] of n cars
+    Returns other_cars_fn(t) -> list of tuples (x,y,yaw) for n cars
     moving straight at speed v, spaced along +x at y=lane_y.
     """
-    def other_cars_fn(i, t):
-        return [(k*spacing + v*t, lane_y, yaw) for k in range(n)]
+    def other_cars_fn(t):
+        return [(k * spacing + v * t, lane_y, yaw) for k in range(n)]
     return other_cars_fn
 
 
@@ -114,95 +127,184 @@ def straight_traffic_factory(v=4.5, lane_y=0.0, yaw=0.0, n=2, spacing=25.0):
 def elliptical_path(a=40, b=4, num_points=300):
     xs, ys = [], []
     for t in range(num_points):
-        theta = math.pi * t / num_points  # 0 to pi
-        x = a * t / num_points
+        theta = math.pi * t / (num_points - 1)  # 0 .. pi
+        x = a * t / (num_points - 1)
         y = b * math.sin(theta)
         xs.append(x)
         ys.append(y)
     return xs, ys
 
 
+# ===== Simulation / cost function =====
+def simulate_and_cost(
+    Kp, Ki, Kd,
+    *,
+    dt=0.1,
+    path_params=(40, 4, 300),
+    bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
+    other_cars_fn=None,
+    verbose=False
+):
+    """
+    Simulate a PID-controlled car following a semi-elliptical path.
 
-# ===== Simulation Setup =====
-pid = PID(Kp=0.05, Ki=0.0005, Kd=0.15)
-car = Car(x=0, y=0, yaw=0, velocity=5.0)
-dt = 0.025
+    Includes:
+      - Hard gain bounds (skip evaluation if out of range)
+      - Overspeed penalty (if velocity > V_MAX)
+      - Collision penalty (if overlapping with other cars from other_cars_fn)
 
-path_x, path_y = elliptical_path()
-car_x, car_y = [car.x], [car.y]
+    Returns:
+        cost (float): total cost value (lower is better)
+        cte_history (list): cross-track error over time
+    """
+    # 0) Hard gain bounds
+    (kp_lo, kp_hi), (ki_lo, ki_hi), (kd_lo, kd_hi) = bounds
+    if not (kp_lo <= Kp <= kp_hi and ki_lo <= Ki <= ki_hi and kd_lo <= Kd <= kd_hi):
+        return 1e12, []  # huge penalty for out-of-bounds gains
 
+    # 1) Setup simulation
+    pid = PID(Kp, Ki, Kd)
+    car = Car(x=0.0, y=0.0, yaw=0.0, velocity=5.0)
 
-TARGET_X0 = 6.0      # start this many meters ahead (increase to start farther)
-TARGET_V_SCALE = 0.60 # target speed = ego_speed * this factor (slightly slower)
-# Target (car being overtaken)
-target_x, target_y = TARGET_X0, 0
-# --- target car tuning (ADD) ---
+    path_x, path_y = elliptical_path(*path_params)
+    cte_history = []
+    collisions = 0
+    overspeed_accum = 0.0
 
+    # 2) Simulation loop
+    for i in range(len(path_x)):
+        t = i * dt
+        desired_y = path_y[i]
+        cte = desired_y - car.y
+        steer = pid.control(cte, dt)
+        car.update(steer, dt)
+        cte_history.append(cte)
 
+        # Overspeed penalty
+        if car.velocity > V_MAX:
+            overspeed_accum += (car.velocity - V_MAX) ** 2
 
-# ===== Animation Setup =====
-fig, ax = plt.subplots(figsize=(10, 5))
-ax.set_aspect('equal', adjustable='box')  # keep 90° angles visually correct
-ax.set_xlim(0, max(path_x) + 5)
-ax.set_ylim(-6, 6)
-ax.set_xlabel("X Position (m)")
-ax.set_ylabel("Y Position (m)")
-ax.set_title("Car Overtaking Maneuver using PID Controller")
-ax.grid(True)
-ax.plot(path_x, path_y, 'r--', label="Desired Path (Overtake)")
-car_dot, = ax.plot([], [], 'bo', markersize=8, label="Ego Car")
-target_dot, = ax.plot([], [], 'ko', markersize=8, label="Other Car")
-trajectory_line, = ax.plot([], [], 'b-', alpha=0.5)
-ego_poly = patches.Polygon([[0, 0]], closed=True, fill=False, ec='b', lw=2, animated=True)
-tgt_poly = patches.Polygon([[0, 0]], closed=True, fill=False, ec='k', lw=2, animated=True)
-ax.add_patch(ego_poly)
-ax.add_patch(tgt_poly)
+        # Collision penalty
+        if other_cars_fn is not None:
+            try:
+                others = other_cars_fn(t)
+            except TypeError:
+                others = other_cars_fn(i, t)
 
-ax.legend()
+            ego_poly = car_corners(car.x, car.y, car.yaw)
+            for ox, oy, oyaw in others:
+                other_poly = car_corners(ox, oy, oyaw)
+                if _sat_overlap(ego_poly, other_poly):
+                    collisions += 1
 
+    # 3) Compute cost
+    sse = sum(e * e for e in cte_history)
+    effort_penalty = 0.0001 * (abs(Kp) + abs(Ki) + abs(Kd))
+    cost = (
+        sse
+        + effort_penalty
+        + W_OVERSPEED * overspeed_accum
+        + W_COLLISION * collisions
+    )
 
-def init():
-    car_dot.set_data([], [])
-    target_dot.set_data([], [])
-    trajectory_line.set_data([], [])
-    ego_poly.set_xy([[0, 0]])
-    tgt_poly.set_xy([[0, 0]])
-    return car_dot, target_dot, trajectory_line, ego_poly, tgt_poly
+    if verbose:
+        print(
+            f"Cost={cost:.4f}  SSE={sse:.4f}  Collisions={collisions} "
+            f"Overspeed={overspeed_accum:.2f}  Gains=({Kp:.4f},{Ki:.6f},{Kd:.4f})"
+        )
 
-
-def update(frame):
-    global target_x, target_y
-
-    # Move target car straight
-    target_x += car.velocity * dt * TARGET_V_SCALE  # slightly slower
-
-    # Find desired point on path
-    if frame < len(path_x):
-        desired_x, desired_y = path_x[frame], path_y[frame]
-    else:
-        desired_x, desired_y = path_x[-1], path_y[-1]
-
-    cte = desired_y - car.y  # cross-track error
-    steer = pid.control(cte, dt)
-    car.update(steer, dt)
-
-    car_x.append(car.x)
-    car_y.append(car.y)
-
-    car_dot.set_data([car.x], [car.y])
-    target_dot.set_data([target_x], [target_y])
-    trajectory_line.set_data(car_x, car_y)
-    # Update rectangles (hitboxes)
-    ego_poly.set_xy(car_corners(car.x, car.y, car.yaw))
-    tgt_poly.set_xy(car_corners(target_x, target_y, 0.0))
-
-
-    return car_dot, target_dot, trajectory_line, ego_poly, tgt_poly
+    return cost, cte_history
 
 
 
+# ===== Visualization function (safe to import) =====
+def visualize_pid(Kp=0.05, Ki=0.0005, Kd=0.15, dt=0.025,
+                  path_params=(40, 4, 300),
+                  target_x0=6.0, target_v_scale=0.6,
+                  show_hitboxes=True):
+    """
+    Animate a single run of the PID controller following the semi-elliptical path.
+    Call visualize_pid(...) from other modules (e.g. SA.py) with optimized gains.
+    """
+    pid = PID(Kp, Ki, Kd)
+    car = Car(x=0.0, y=0.0, yaw=0.0, velocity=5.0)
 
-ani = FuncAnimation(fig, update, frames=len(path_x), init_func=init,
-                    blit=True, interval=50, repeat=False)
+    path_x, path_y = elliptical_path(*path_params)
+    car_x, car_y = [car.x], [car.y]
 
-plt.show()
+    target_x = target_x0
+    target_y = 0.0
+
+    # setup figure
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlim(0, max(path_x) + 5)
+    ax.set_ylim(-6, 6)
+    ax.set_xlabel("X Position (m)")
+    ax.set_ylabel("Y Position (m)")
+    ax.set_title("Car Overtaking Maneuver using PID Controller")
+    ax.grid(True)
+    ax.plot(path_x, path_y, 'r--', label="Desired Path (Overtake)")
+
+    car_dot, = ax.plot([], [], 'bo', markersize=6, label="Ego Car")
+    target_dot, = ax.plot([], [], 'ko', markersize=6, label="Other Car")
+    trajectory_line, = ax.plot([], [], 'b-', alpha=0.6, label="Ego Trajectory")
+
+    ego_poly = patches.Polygon([[0, 0]], closed=True, fill=False, ec='b', lw=2, animated=True) if show_hitboxes else None
+    tgt_poly = patches.Polygon([[0, 0]], closed=True, fill=False, ec='k', lw=2, animated=True) if show_hitboxes else None
+    if ego_poly is not None:
+        ax.add_patch(ego_poly)
+    if tgt_poly is not None:
+        ax.add_patch(tgt_poly)
+
+    ax.legend()
+
+    def init():
+        car_dot.set_data([], [])
+        target_dot.set_data([], [])
+        trajectory_line.set_data([], [])
+        if ego_poly is not None:
+            ego_poly.set_xy([[0, 0]])
+        if tgt_poly is not None:
+            tgt_poly.set_xy([[0, 0]])
+        return (car_dot, target_dot, trajectory_line, ego_poly, tgt_poly) if ego_poly is not None else (car_dot, target_dot, trajectory_line)
+
+    def update(frame):
+        nonlocal target_x, target_y
+        # advance target
+        target_x += car.velocity * dt * target_v_scale
+
+        # desired point
+        if frame < len(path_x):
+            desired_y = path_y[frame]
+        else:
+            desired_y = path_y[-1]
+
+        cte = desired_y - car.y
+        steer = pid.control(cte, dt)
+        car.update(steer, dt)
+
+        car_x.append(car.x)
+        car_y.append(car.y)
+
+        car_dot.set_data([car.x], [car.y])
+        target_dot.set_data([target_x], [target_y])
+        trajectory_line.set_data(car_x, car_y)
+
+        if ego_poly is not None:
+            ego_poly.set_xy(car_corners(car.x, car.y, car.yaw))
+        if tgt_poly is not None:
+            tgt_poly.set_xy(car_corners(target_x, target_y, 0.0))
+
+        return (car_dot, target_dot, trajectory_line, ego_poly, tgt_poly) if ego_poly is not None else (car_dot, target_dot, trajectory_line)
+
+    ani = FuncAnimation(fig, update, frames=len(path_x), init_func=init,
+                        blit=True, interval=50, repeat=False)
+    plt.show()
+
+
+# Run visualization if executed directly
+if __name__ == "__main__":
+    visualize_pid()
+
+

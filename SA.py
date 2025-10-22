@@ -6,6 +6,42 @@ import matplotlib.pyplot as plt
 # -------------------------
 # PID and Car (same as before)
 # -------------------------
+
+# ==== ADD: road / safety constants & helpers ====
+# Road: two lanes (right at y=0, left at y=LANE_W)
+LANE_W = 3.6                      # meters
+ROAD_Y_MIN = -LANE_W/2            # bottom edge of right lane
+ROAD_Y_MAX = +3*LANE_W/2          # top edge of left lane (2 lanes total)
+
+# Car footprint (approx) for safety / collision
+CAR_L = 4.5
+CAR_W = 1.8
+SAFE_GAP_LONG = 10.0              # min bumper-to-bumper gap when same lane (m)
+SAFE_LATERAL_MARGIN = 0.3         # extra lateral margin when different lanes (m)
+
+# Speed constraint
+V_MAX = 10.0                      # m/s (edit as you like)
+
+# Penalty weights (tune freely)
+W_BORDER = 500.0                  # penalize road border violations
+W_COLLISION = 1e6                 # big penalty on collision / unsafe gap
+W_OVERSPEED = 200.0               # penalize exceeding V_MAX
+
+def same_lane(y1, y2, lane_w=LANE_W):
+    """Are both cars in the same lane? (near right-lane center for this model)."""
+    return abs(y1 - 0.0) < lane_w/2 and abs(y2 - 0.0) < lane_w/2
+
+def lateral_separation_ok(y1, y2, lane_w=LANE_W):
+    """If different lanes, ensure enough lateral separation."""
+    return abs(y1 - y2) >= (CAR_W + SAFE_LATERAL_MARGIN)
+
+def border_overshoot(y, y_min=ROAD_Y_MIN, y_max=ROAD_Y_MAX):
+    """How far outside the paved road the ego is (0 if inside)."""
+    if y < y_min: return (y_min - y)
+    if y > y_max: return (y - y_max)
+    return 0.0
+
+
 class PID:
     def __init__(self, Kp, Ki, Kd):
         self.Kp = Kp

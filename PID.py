@@ -18,6 +18,10 @@ class PID:
         self.prev_error = error
         return output
 
+    def reset(self):
+        self.prev_error = 0.0
+        self.integral = 0.0
+
 
 # ===== Simple Car Model =====
 class Car:
@@ -34,6 +38,10 @@ class Car:
         self.y += self.velocity * math.sin(self.yaw) * dt
         self.yaw += (self.velocity / self.L) * math.tan(delta) * dt
 
+    def reset(self, x=0.0, y=0.0, yaw=0.0):
+        self.x = x
+        self.y = y
+        self.yaw = yaw
 
 # ===== Define Semi-Elliptical Path =====
 def elliptical_path(a=40, b=4, num_points=300):

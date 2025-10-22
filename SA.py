@@ -2,7 +2,7 @@ import math
 import random
 import copy
 import matplotlib.pyplot as plt
-from PID import PID, Car, elliptical_path
+from PID import PID, Car, _sat_overlap, car_corners, elliptical_path
 
 
 
@@ -47,31 +47,69 @@ def border_overshoot(y, y_min=ROAD_Y_MIN, y_max=ROAD_Y_MAX):
 # Given PID gains, returns cost (sum of squared CTE)
 # You can add more realism or noise if desired
 # -------------------------
-def simulate_and_cost(Kp, Ki, Kd, verbose=False, dt=0.1, path_params=(40,4,300)):
-    # build objects
+# === constrained cost wrapper (ADD; keep your original simulate_and_cost) ===
+def simulate_and_cost(
+    Kp, Ki, Kd,
+    *,
+    dt=0.1,
+    path_params=(40, 4, 300),
+    bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
+    other_cars_fn=None,
+    verbose=False
+):
+    """
+    Like your existing simulate_and_cost, but adds:
+      - hard gain bounds (min/max for Kp, Ki, Kd)
+      - overspeed penalty if velocity > V_MAX (if you later vary velocity)
+      - collision penalty vs any cars provided by other_cars_fn(step,t)
+    Returns (cost, cte_history).
+    """
+    # 0) hard gain bounds
+    (kp_lo, kp_hi), (ki_lo, ki_hi), (kd_lo, kd_hi) = bounds
+    if not (kp_lo <= Kp <= kp_hi and ki_lo <= Ki <= ki_hi and kd_lo <= Kd <= kd_hi):
+        return 1e12, []  # huge penalty if outside bounds
+
+    # 1) build sim (same setup as your original)
     pid = PID(Kp, Ki, Kd)
     car = Car(x=0.0, y=0.0, yaw=0.0, velocity=5.0)
-
     path_x, path_y = elliptical_path(*path_params)
 
     cte_history = []
-    # run along the path points (one desired point per time-step)
+    overspeed_accum = 0.0
+    collisions = 0
+
+    # 2) roll out
     for i in range(len(path_x)):
-        desired_x, desired_y = path_x[i], path_y[i]
+        t = i * dt
+        desired_y = path_y[i]
         cte = desired_y - car.y
         steer = pid.control(cte, dt)
         car.update(steer, dt)
         cte_history.append(cte)
 
-    # cost: sum squared CTE + small penalty on control effort (optional)
+        # overspeed penalty (if you later make velocity dynamic)
+        if car.velocity > V_MAX:
+            overspeed_accum += (car.velocity - V_MAX) ** 2
+
+        # collision penalty with other cars (if provided)
+        if other_cars_fn is not None:
+            ego_poly = car_corners(car.x, car.y, car.yaw)
+            for (ox, oy, oyaw) in other_cars_fn(i, t):
+                oth_poly = car_corners(ox, oy, oyaw)
+                if _sat_overlap(ego_poly, oth_poly):
+                    collisions += 1  # count each colliding car this step
+
+    # 3) base cost (same style as yours) + penalties
     sse = sum(e*e for e in cte_history)
-    effort_penalty = 0.0001 * (abs(Kp) + abs(Ki) + abs(Kd))  # small regularizer
-    cost = sse + effort_penalty
+    effort_penalty = 0.0001 * (abs(Kp) + abs(Ki) + abs(Kd))
+    cost = sse + effort_penalty + W_OVERSPEED * overspeed_accum + W_COLLISION * collisions
 
     if verbose:
-        print(f"Sim cost: {cost:.4f}  Kp={Kp:.4f}, Ki={Ki:.6f}, Kd={Kd:.4f}")
+        print(f"[constrained] cost={cost:.4f}  gains=({Kp:.5f},{Ki:.6f},{Kd:.5f})  "
+              f"overspd={overspeed_accum:.2f}  coll={collisions}")
 
     return cost, cte_history
+
 
 
 # -------------------------

@@ -68,7 +68,7 @@ def simulated_annealing(
 
         # live visualization checkpoint
         if visualize_every and it > 0 and (it % visualize_every == 0 or it == 1):
-            print(f"\n🧠 Visualizing best gains so far (iteration {it})...")
+            print(f"\n Visualizing best gains so far (iteration {it})...")
             best_Kp, best_Ki, best_Kd = best
             visualize_pid(best_Kp, best_Ki, best_Kd)
             if visualize_blocking:
@@ -88,14 +88,14 @@ if __name__ == "__main__":
     # Example:
     # other_cars_fn = straight_traffic_factory(v=4.5, lane_y=0.0, n=2)
 
-    init_gains = (-5.0, 0.5, 1.1)
+    init_gains = (0.5, 0.05, 0.1)
     sa_result = simulated_annealing(
         initial_gains=init_gains,
         initial_temp=1.0,
         cooling_rate=0.995,
         iterations=2000,
         step_scale=(0.15, 0.0004, 0.04),
-        param_bounds=((-5.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
+        param_bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
         evaluate_fn=simulate_and_cost,
         verbose_every=200,
         visualize_every=500,  # show animation every 500 iters
@@ -103,7 +103,7 @@ if __name__ == "__main__":
         other_cars_fn=other_cars_fn,
     )
 
-    print("\n🏁 Best gains found:", sa_result["best_gains"], "Cost:", sa_result["best_cost"])
+    print("\n Best gains found:", sa_result["best_gains"], "Cost:", sa_result["best_cost"])
 
     # === Evaluate best gains ===
     best_Kp, best_Ki, best_Kd = sa_result["best_gains"]
@@ -119,5 +119,5 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
 
-    # Visualize the optimized PID in action 🚗💨
+    # Visualize the optimized PID in action
     visualize_pid(best_Kp, best_Ki, best_Kd)

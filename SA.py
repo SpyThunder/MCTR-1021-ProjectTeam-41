@@ -15,7 +15,7 @@ from PID import (
 # Simulated Annealing optimizer (with optional live visualization)
 # -------------------------
 def simulated_annealing(
-    initial_gains=(0.4, 0.002, 0.1),
+    initial_gains=(5.0, 0.5, 1.1),
     initial_temp=1.0,
     cooling_rate=0.995,
     iterations=5000,
@@ -63,11 +63,11 @@ def simulated_annealing(
         history.append((it, current_cost, best_cost, T))
 
         # progress log
-        if verbose_every and (it % verbose_every == 0 or it == iterations - 1):
+        if verbose_every and (it == 1 or it % verbose_every == 0 or it == iterations - 1):
             print(f"it={it:5d}  T={T:.6f}  cur_cost={current_cost:.6f}  best_cost={best_cost:.6f}")
 
         # live visualization checkpoint
-        if visualize_every and it > 0 and it % visualize_every == 0:
+        if visualize_every and it > 0 and (it % visualize_every == 0 or it == 1):
             print(f"\n🧠 Visualizing best gains so far (iteration {it})...")
             best_Kp, best_Ki, best_Kd = best
             visualize_pid(best_Kp, best_Ki, best_Kd)
@@ -88,14 +88,14 @@ if __name__ == "__main__":
     # Example:
     # other_cars_fn = straight_traffic_factory(v=4.5, lane_y=0.0, n=2)
 
-    init_gains = (0.4, 0.002, 0.1)
+    init_gains = (-5.0, 0.5, 1.1)
     sa_result = simulated_annealing(
         initial_gains=init_gains,
         initial_temp=1.0,
         cooling_rate=0.995,
         iterations=2000,
         step_scale=(0.15, 0.0004, 0.04),
-        param_bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
+        param_bounds=((-5.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
         evaluate_fn=simulate_and_cost,
         verbose_every=200,
         visualize_every=500,  # show animation every 500 iters

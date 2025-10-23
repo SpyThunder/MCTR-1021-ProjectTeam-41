@@ -11,7 +11,10 @@ CAR_W = 1.8  # car width  (m)
 # === constraints (ADD) ===
 V_MAX = 10.0                 # m/s cap; overspeed gets penalized
 W_OVERSPEED = 200.0          # weight for overspeed penalty
-W_COLLISION = 1_000_000.0    # big penalty per collision event
+W_COLLISION = 10.0    # big penalty per collision event
+
+target_x0 = 6.0  # initial x position of the other car
+tv_scale = 0.5    # other car speed scale (fraction of ego speed)
 
 
 # ===== PID Controller =====
@@ -139,7 +142,8 @@ def elliptical_path(a=40, b=4, num_points=300):
 def simulate_and_cost(
     Kp, Ki, Kd,
     *,
-    dt=0.1,
+    dt=0.025
+,
     path_params=(40, 4, 300),
     bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
     other_cars_fn=None,
@@ -171,6 +175,13 @@ def simulate_and_cost(
     collisions = 0
     overspeed_accum = 0.0
 
+    # === Target setup (same as visualization) ===
+    target_x = target_x0
+    target_y = 0.0
+    target_yaw = 0.0
+    target_v_scale = tv_scale
+
+
     # 2) Simulation loop
     for i in range(len(path_x)):
         t = i * dt
@@ -179,6 +190,32 @@ def simulate_and_cost(
         steer = pid.control(cte, dt)
         car.update(steer, dt)
         cte_history.append(cte)
+        # === Update target and check collision with ego ===
+        target_x += car.velocity * dt * target_v_scale  # target moves forward
+        # === Compute polygons with identical parameters to visualization ===
+        ego_poly = car_corners(
+            car.x,
+            car.y,
+            car.yaw,
+            length=CAR_L,
+            width=CAR_W,
+        )
+        target_poly = car_corners(
+            target_x,
+            target_y,
+            target_yaw,
+            length=CAR_L,
+            width=CAR_W,
+        )
+
+        # === Apply small tolerance to avoid floating-point edge contact ===
+        overlap = _sat_overlap(ego_poly, target_poly)
+        if overlap:
+            # Check centroid distance to filter out micro-overlaps (< 5 cm)
+            dx = car.x - target_x
+            dy = car.y - target_y
+            if math.hypot(dx, dy) < 0.95 * CAR_L:
+                collisions += 1
 
         # Overspeed penalty
         if car.velocity > V_MAX:
@@ -220,7 +257,6 @@ def simulate_and_cost(
 # ===== Visualization function (safe to import) =====
 def visualize_pid(Kp=0.05, Ki=0.0005, Kd=0.15, dt=0.025,
                   path_params=(40, 4, 300),
-                  target_x0=6.0, target_v_scale=0.6,
                   show_hitboxes=True):
     """
     Animate a single run of the PID controller following the semi-elliptical path.
@@ -232,6 +268,7 @@ def visualize_pid(Kp=0.05, Ki=0.0005, Kd=0.15, dt=0.025,
     path_x, path_y = elliptical_path(*path_params)
     car_x, car_y = [car.x], [car.y]
 
+    target_v_scale = tv_scale
     target_x = target_x0
     target_y = 0.0
 

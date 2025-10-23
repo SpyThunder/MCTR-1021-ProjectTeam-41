@@ -16,6 +16,14 @@ W_COLLISION = 10.0    # big penalty per collision event
 target_x0 = 6.0  # initial x position of the other car
 tv_scale = 0.5    # other car speed scale (fraction of ego speed)
 
+# --- road bounds (ADD) ---
+LANE_W = 3.6
+ROAD_Y_MIN = -LANE_W/2          # bottom edge of right lane
+ROAD_Y_MAX = +3*LANE_W/2        # top edge of left lane (2 lanes total)
+
+# optional cost kick when leaving the road
+W_BORDER = 1000.0               # weight for road-exit penalty
+
 
 # ===== PID Controller =====
 class PID:
@@ -101,6 +109,13 @@ def _sat_overlap(polyA, polyB):
                 return False  # separated on this axis
     return True  # all axes overlapped -> collision
 
+# --- border overshoot helper (ADD) ---
+def border_overshoot(y, y_min=ROAD_Y_MIN, y_max=ROAD_Y_MAX):
+    if y < y_min: return (y_min - y)
+    if y > y_max: return (y - y_max)
+    return 0.0
+
+
 
 # === SAT self-test (optional, safe to run at import) ===
 def _sat_self_test():
@@ -181,6 +196,10 @@ def simulate_and_cost(
     target_yaw = 0.0
     target_v_scale = tv_scale
 
+    steps_used = 0            # ADD
+    left_road = False         # ADD
+    overshoot_amt = 0.0       # ADD
+
 
     # 2) Simulation loop
     for i in range(len(path_x)):
@@ -190,6 +209,13 @@ def simulate_and_cost(
         steer = pid.control(cte, dt)
         car.update(steer, dt)
         cte_history.append(cte)
+                # --- early stop if car exits road (ADD) ---
+        if not (ROAD_Y_MIN <= car.y <= ROAD_Y_MAX):
+            left_road = True
+            overshoot_amt = border_overshoot(car.y)  # how far outside (meters)
+            steps_used += 1                           # count this last step
+            break
+
         # === Update target and check collision with ego ===
         target_x += car.velocity * dt * target_v_scale  # target moves forward
         # === Compute polygons with identical parameters to visualization ===
@@ -233,8 +259,15 @@ def simulate_and_cost(
                 other_poly = car_corners(ox, oy, oyaw)
                 if _sat_overlap(ego_poly, other_poly):
                     collisions += 1
+        steps_used += 1
 
     # 3) Compute cost
+        # time term if you’re using it; safe even if you’re not
+    total_time = steps_used * dt  # ADD (optional)
+
+    # --- border penalty (ADD) ---
+    border_penalty = W_BORDER * (1.0 + overshoot_amt) if left_road else 0.0
+
     sse = sum(e * e for e in cte_history)
     effort_penalty = 0.0001 * (abs(Kp) + abs(Ki) + abs(Kd))
     cost = (
@@ -242,13 +275,16 @@ def simulate_and_cost(
         + effort_penalty
         + W_OVERSPEED * overspeed_accum
         + W_COLLISION * collisions
+        + border_penalty  
     )
 
     if verbose:
         print(
             f"Cost={cost:.4f}  SSE={sse:.4f}  Collisions={collisions} "
-            f"Overspeed={overspeed_accum:.2f}  Gains=({Kp:.4f},{Ki:.6f},{Kd:.4f})"
+            f"Overspeed={overspeed_accum:.2f}  LeftRoad={left_road}  "
+            f"Gains=({Kp:.4f},{Ki:.6f},{Kd:.4f})"
         )
+
 
     return cost, cte_history
 
@@ -323,6 +359,14 @@ def visualize_pid(Kp=0.05, Ki=0.0005, Kd=0.15, dt=0.025,
 
         car_x.append(car.x)
         car_y.append(car.y)
+
+                # --- stop the animation if we exit the road (ADD) ---
+        if not (ROAD_Y_MIN <= car.y <= ROAD_Y_MAX):
+            print(f"Exited road at frame {frame}: y={car.y:.2f}. Stopping.")
+            plt.close(fig)  # closes the figure; ends the animation
+            # return artists so blit has something valid
+            return (car_dot, target_dot, trajectory_line, ego_poly, tgt_poly) if ego_poly is not None else (car_dot, target_dot, trajectory_line)
+
 
         car_dot.set_data([car.x], [car.y])
         target_dot.set_data([target_x], [target_y])

@@ -15,12 +15,12 @@ from PID import (
 # Simulated Annealing optimizer (with optional live visualization)
 # -------------------------
 def simulated_annealing(
-    initial_gains=(5.0, 0.5, 1.1),
+    initial_gains=(40, 10, 10),
     initial_temp=1.0,
     cooling_rate=0.995,
     iterations=5000,
-    step_scale=(0.2, 0.0005, 0.05),
-    param_bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
+    step_scale=(10, 2, 5),
+    param_bounds=((0.0, 40.0), (0.0, 10), (0.0, 10.0)),
     evaluate_fn=simulate_and_cost,
     verbose_every=500,
     visualize_every=None,  # e.g. 500 → show progress every 500 iterations
@@ -42,7 +42,7 @@ def simulated_annealing(
         proposal = [
             max(param_bounds[i][0],
                 min(param_bounds[i][1],
-                    current[i] + random.gauss(0, step_scale[i])))
+                    current[i] + random.gauss(-step_scale[i], step_scale[i])))
             for i in range(3)
         ]
 
@@ -94,8 +94,8 @@ if __name__ == "__main__":
         initial_temp=1.0,
         cooling_rate=0.995,
         iterations=2000,
-        step_scale=(0.15, 0.0004, 0.04),
-        param_bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
+        step_scale=(20, 2, 5),
+        param_bounds=((0.0, 100), (0.0, 10), (0.0, 10)),
         evaluate_fn=simulate_and_cost,
         verbose_every=200,
         visualize_every=500,  # show animation every 500 iters

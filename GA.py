@@ -18,9 +18,10 @@ def genetic_algorithm(
     mutation_scale,
     visualize_every,
     visualize_blocking,
-    other_cars_fn
+    other_cars_fn,
+    rng_seed=0,
 ):
-    random.seed(0)
+    random.seed(rng_seed)
 
     # --- Initialize random population ---
     population = [

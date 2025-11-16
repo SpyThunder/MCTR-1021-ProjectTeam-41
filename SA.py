@@ -26,8 +26,9 @@ def simulated_annealing(
     visualize_every=None,  # e.g. 500 → show progress every 500 iterations
     visualize_blocking=True,
     other_cars_fn=None,    # optional: collision testing
+    rng_seed=0,
 ):
-    random.seed(0)
+    random.seed(rng_seed)
     current = list(initial_gains)
     current_cost, _ = evaluate_fn(*current, other_cars_fn=other_cars_fn)
     best = current[:]

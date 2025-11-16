@@ -35,11 +35,11 @@ def plot_convergence(history_ga, history_sa=None, title="Fitness convergence", s
     plt.show()
 
 
-def plot_cte_comparison(gains_list, labels, path_params=(40, 4, 300), dt=0.025):
+def plot_cte_comparison(gains_list, labels,  dt=0.025):
     plt.figure(figsize=(8, 4))
     for gains, label in zip(gains_list, labels):
         Kp, Ki, Kd = gains
-        cost, cte = simulate_and_cost(Kp, Ki, Kd, dt=dt, path_params=path_params)
+        cost, cte = simulate_and_cost(Kp, Ki, Kd, dt=dt, path_type=1)
         if len(cte) == 0:
             print(f"[plot_cte] {label} produced empty CTE (likely out-of-bounds).")
             continue
@@ -62,104 +62,69 @@ def save_history_csv(history, filename):
     print(f"[save_history_csv] Written {filename}")
 
 
-# ---------------------------
-# Case runner (uses the new GA)
-# ---------------------------
 def run_case_study(case_name, path_params=(40, 4, 300), other_cars_fn=None,
-                   ga_params=None, sa_params=None, compare_to_sa=True):
+                   ga_params=None, sa_params=None,
+                   compare_to_sa=True,
+                   ga_runs=5, sa_runs=5):
 
     print(f"\n=== Running case: {case_name} ===")
 
     if ga_params is None:
         ga_params = {}
 
-    # Map your custom GA parameter names to the imported GA function
-    mapped = dict(
-        generations       = ga_params.get("generations", 100),
-        population_size   = ga_params.get("pop_size", 30),
-        crossover_alpha   = ga_params.get("arith_alpha", 0.5),
-        elitism_ratio     = ga_params.get("elite_frac", 0.2),
-        crossover_ratio   = ga_params.get("crossover_frac", 0.6),
-        mutation_ratio    = ga_params.get("mutation_frac", 0.2),
-        mutation_scale    = ga_params.get("mutation_scale", (20, 2, 5)),
-        visualize_every   = ga_params.get("visualize_every", None),
-        visualize_blocking= ga_params.get("visualize_blocking", False),
-        other_cars_fn     = other_cars_fn
-    )
-
-    # Run the GA
-    print("[GA] Running genetic algorithm...")
+    # ---- GA MULTI-RUN ----
+    print(f"[GA] Running {ga_runs} times...")
     t0 = time.time()
-    ga_result = genetic_algorithm(**mapped)
+    ga_multi = run_ga_multiple(ga_runs, ga_params, other_cars_fn)
     t_ga = time.time() - t0
 
-    print(f"[GA] Done. Best gains: {ga_result['best_gains']}  cost={ga_result['best_cost']:.6f}  time={t_ga:.2f}s")
+    print("\n[GA] SUMMARY")
+    print(f"  Mean cost: {ga_multi['mean']:.4f}")
+    print(f"  Std cost : {ga_multi['std']:.4f}")
+    print(f"  Best cost: {min(ga_multi['best_costs']):.4f}")
+    print(f"  Best gains: {ga_multi['best_overall']}")
+    print(f"  Time: {t_ga:.2f}s")
 
-    # --- SA (optional) ---
-    sa_result = None
+    sa_multi = None
     if compare_to_sa:
-        sa_params = sa_params or {}
-
-        sa_short_params = dict(
-            initial_gains=(0.5, 0.05, 0.1),
-            initial_temp=1.0,
-            cooling_rate=0.995,
-            iterations=1000,
-            step_scale=(20, 2, 5),
-            param_bounds=((0.0, 100), (0.0, 10), (0.0, 10)),
-            evaluate_fn=simulate_and_cost,
-            verbose_every=200,
-            visualize_every=None,
-            visualize_blocking=False,
-            other_cars_fn=other_cars_fn,
-        )
-        sa_short_params.update(sa_params)
-
-        print("[SA] Running simulated annealing...")
+        print(f"\n[SA] Running {sa_runs} times...")
         t0 = time.time()
-        sa_result = simulated_annealing(**sa_short_params)
+        sa_multi = run_sa_multiple(sa_runs, sa_params or {}, other_cars_fn)
         t_sa = time.time() - t0
 
-        print(f"[SA] Done. Best gains: {sa_result['best_gains']} cost={sa_result['best_cost']:.6f} time={t_sa:.2f}s")
+        print("\n[SA] SUMMARY")
+        print(f"  Mean cost: {sa_multi['mean']:.4f}")
+        print(f"  Std cost : {sa_multi['std']:.4f}")
+        print(f"  Best cost: {min(sa_multi['best_costs']):.4f}")
+        print(f"  Best gains: {sa_multi['best_overall']}")
+        print(f"  Time: {t_sa:.2f}s")
 
-    else:
-        print("[GA] SA comparison skipped.")
-
-    # --- Convergence plot ---
-    # Convert GA history to required plotting format
+    # Plot using the FIRST run history
+    history_ga_raw = ga_multi["histories"][0]
     history_ga = {
-        "gen": [x[0] for x in ga_result["history"]],
-        "best_cost": [x[1] for x in ga_result["history"]],
-        "mean_cost": [x[1] for x in ga_result["history"]],  # GA function does not compute mean → reuse best
-        "best_gains": [x[2] for x in ga_result["history"]],
+        "gen": [x[0] for x in history_ga_raw],
+        "best_cost": [x[1] for x in history_ga_raw],
+        "mean_cost": [x[1] for x in history_ga_raw],
+        "best_gains": [x[2] for x in history_ga_raw],
     }
 
-    history_sa = sa_result["history"] if sa_result else None
+    history_sa = sa_multi["histories"][0] if sa_multi else None
 
-    plot_convergence(history_ga, history_sa,
-                     title=f"Convergence - {case_name}")
+    plot_convergence(history_ga, history_sa, title=f"Convergence - {case_name}")
 
-    # CTE comparison
-    baseline = (0.05, 0.0005, 0.15)
-    gains_list = [ga_result["best_gains"]]
-    labels = ["Genetic Algorithm best"]
+    # Compare best runs
+    gains_list = [ga_multi["best_overall"]]
+    labels = ["GA best over runs"]
 
-    if sa_result:
-        gains_list.append(sa_result["best_gains"])
-        labels.append("SA best")
+    if sa_multi:
+        gains_list.append(sa_multi["best_overall"])
+        labels.append("SA best over runs")
 
-    gains_list.append(baseline)
-    labels.append("Baseline")
 
-    plot_cte_comparison(gains_list, labels, path_params=path_params)
+    plot_cte_comparison(gains_list, labels)
 
-    # Save GA history
-    outdir = "ga_results"
-    os.makedirs(outdir, exist_ok=True)
-    csvname = os.path.join(outdir, f"history_{case_name.replace(' ', '_')}.csv")
-    save_history_csv(history_ga, csvname)
+    return {"ga_multi": ga_multi, "sa_multi": sa_multi}
 
-    return {"ga": ga_result, "sa": sa_result}
 
 
 
@@ -169,44 +134,6 @@ def run_case_study(case_name, path_params=(40, 4, 300), other_cars_fn=None,
 def default_suite():
     results = {}
 
-    # Case 1: easy
-    results["case_easy"] = run_case_study(
-        "Easy - default path, no traffic",
-        path_params=(40, 4, 300),
-        other_cars_fn=None,
-        ga_params={
-            "pop_size": 50,
-            "generations": 80,
-            "elite_frac": 0.20,
-            "crossover_frac": 0.60,
-            "mutation_frac": 0.20,
-            "arith_alpha": 0.5,
-            "mutation_scale": (0.08, 0.08, 0.08),
-            "tournament_k": 3,
-            "rng_seed": 0,
-        },
-        compare_to_sa=True,
-    )
-
-    # Case 2: harder
-    results["case_harder"] = run_case_study(
-        "Harder - larger lateral amplitude",
-        path_params=(40, 8, 300),
-        other_cars_fn=None,
-        ga_params={
-            "pop_size": 60,
-            "generations": 120,
-            "elite_frac": 0.20,
-            "crossover_frac": 0.60,
-            "mutation_frac": 0.20,
-            "arith_alpha": 0.5,
-            "mutation_scale": (0.10, 0.10, 0.10),  # FIXED
-            "tournament_k": 3,
-            "rng_seed": 1,
-        },
-        compare_to_sa=True,
-    )
-
     # Case 3: collisions
     other_fn = straight_traffic_factory(v=4.5, lane_y=0.0, n=2)
     results["case_collision"] = run_case_study(
@@ -214,13 +141,13 @@ def default_suite():
         path_params=(40, 4, 300),
         other_cars_fn=other_fn,
         ga_params={
-            "pop_size": 70,
-            "generations": 140,
+            "pop_size": 100,
+            "generations": 100,
             "elite_frac": 0.20,
             "crossover_frac": 0.60,
             "mutation_frac": 0.20,
             "arith_alpha": 0.5,
-            "mutation_scale": (0.10, 0.10, 0.10),  # FIXED
+            "mutation_scale": (20, 2, 5),  # FIXED
             "tournament_k": 4,
             "rng_seed": 2,
         },
@@ -229,6 +156,120 @@ def default_suite():
 
     return results
 
+import numpy as np
+
+def run_ga_multiple(times, ga_params, other_cars_fn=None):
+    best_costs = []
+    best_gains = []
+    histories = []
+
+    for i in range(times):
+        print(f"\n[GA] Multi-run {i+1}/{times}")
+        mapped = dict(
+            generations       = ga_params.get("generations", 100),
+            population_size   = ga_params.get("pop_size", 100),
+            crossover_alpha   = ga_params.get("arith_alpha", 0.5),
+            elitism_ratio     = ga_params.get("elite_frac", 0.2),
+            crossover_ratio   = ga_params.get("crossover_frac", 0.6),
+            mutation_ratio    = ga_params.get("mutation_frac", 0.2),
+            mutation_scale    = ga_params.get("mutation_scale", (20, 2, 5)),
+            visualize_every   = None,
+            visualize_blocking=False,
+            other_cars_fn     = other_cars_fn,
+            rng_seed = i
+        )
+        out = genetic_algorithm(**mapped)
+        best_costs.append(out["best_cost"])
+        best_gains.append(out["best_gains"])
+        histories.append(out["history"])
+
+    return {
+        "best_costs": best_costs,
+        "best_gains": best_gains,
+        "histories": histories,
+        "mean": float(np.mean(best_costs)),
+        "std": float(np.std(best_costs)),
+        "best_overall": best_gains[np.argmin(best_costs)],
+    }
+
+
+def run_sa_multiple(times, sa_params, other_cars_fn=None):
+    best_costs = []
+    best_gains = []
+    histories = []
+
+    for i in range(times):
+        print(f"\n[SA] Multi-run {i+1}/{times}")
+        p = dict(
+            initial_gains=(0.5, 0.05, 0.1),
+            initial_temp=1.0,
+            cooling_rate=0.995,
+            iterations=10000,
+            step_scale=(20, 2, 5),
+            param_bounds=((0.0, 100), (0.0, 10), (0.0, 10)),
+            evaluate_fn=simulate_and_cost,
+            verbose_every=200,
+            visualize_every=None,
+            visualize_blocking=False,
+            other_cars_fn=other_cars_fn,
+            rng_seed = i
+        )
+        p.update(sa_params)
+
+        out = simulated_annealing(**p)
+        best_costs.append(out["best_cost"])
+        best_gains.append(out["best_gains"])
+        histories.append(out["history"])
+
+    return {
+        "best_costs": best_costs,
+        "best_gains": best_gains,
+        "histories": histories,
+        "mean": float(np.mean(best_costs)),
+        "std": float(np.std(best_costs)),
+        "best_overall": best_gains[np.argmin(best_costs)],
+    }
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_gaussian(mean, std, label="Distribution", color=None, shade=True):
+    """
+    Plot a Gaussian (normal) PDF from mean and standard deviation.
+    """
+    if std == 0:
+        # Special case: degenerate distribution (spike at the mean)
+        x = np.linspace(mean - 1, mean + 1, 400)
+        y = np.zeros_like(x)
+        center_idx = np.argmin(np.abs(x - mean))
+        y[center_idx] = 1.0  # spike
+        plt.plot(x, y, label=f"{label} (std=0)", linewidth=2, color=color)
+        return
+
+    # Normal distribution range
+    x = np.linspace(mean - 4 * std, mean + 4 * std, 400)
+    y = (1 / (std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
+
+    plt.plot(x, y, label=f"{label} (μ={mean:.3f}, σ={std:.3f})", linewidth=2, color=color)
+
+    if shade:
+        plt.fill_between(x, y, alpha=0.2, color=color)
+
+def plot_gaussian_comparison(ga_mean, ga_std, sa_mean=None, sa_std=None):
+    plt.figure(figsize=(8, 4))
+
+    # GA distribution
+    plot_gaussian(ga_mean, ga_std, label="GA Distribution", color="blue")
+
+    # SA distribution (if provided)
+    if sa_mean is not None and sa_std is not None:
+        plot_gaussian(sa_mean, sa_std, label="SA Distribution", color="red")
+
+    plt.title("Gaussian Distribution of Best Costs Across Runs")
+    plt.xlabel("Cost")
+    plt.ylabel("Probability Density")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
 
 
 # ---------------------------
@@ -240,7 +281,17 @@ if __name__ == "__main__":
     results = default_suite()
     print("\nAll case studies finished in %.2f s" % (time.time() - tstart))
     for k, v in results.items():
-        print(f"{k}: genetic_algorithm best={v['ga']['best_gains']} cost={v['ga']['best_cost']:.6f}")
-        if v["sa"] is not None:
-            print(f"     SA best={v['sa']['best_gains']} cost={v['sa']['best_cost']:.6f}")
-    print("Results saved in ./ga_results/*.csv")
+        ga = v["ga_multi"]
+        ga_mean = ga["mean"]
+        ga_std = ga["std"]
+        print(f"{k}: GA mean={ga['mean']:.6f} std={ga['std']:.6f} best={min(ga['best_costs']):.6f}")
+        print(f"     GA best gains: {ga['best_overall']}")
+
+        if v["sa_multi"] is not None:
+            sa = v["sa_multi"]
+            sa_mean = sa["mean"]
+            sa_std = sa["std"]
+            print(f"     SA mean={sa['mean']:.6f} std={sa['std']:.6f} best={min(sa['best_costs']):.6f}")
+            print(f"     SA best gains: {sa['best_overall']}")
+    plot_gaussian_comparison(ga_mean, ga_std, sa_mean, sa_std)
+

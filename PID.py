@@ -230,7 +230,7 @@ def simulate_and_cost(
     Kp, Ki, Kd,
     *,
     dt=0.025,
-    path_type=3,
+    path_type=1,
     bounds=((0.0, 100), (0.0, 10), (0.0, 10)),
     other_cars_fn=None,
     verbose=False
@@ -372,7 +372,7 @@ def simulate_and_cost(
 
 # ===== Visualization function (safe to import) =====
 def visualize_pid(Kp=0.05, Ki=0.0005, Kd=0.15, dt=0.025,
-                  path_type=3,
+                  path_type=1,
                   show_hitboxes=True):
 
     """

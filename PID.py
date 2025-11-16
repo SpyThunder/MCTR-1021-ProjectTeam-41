@@ -160,7 +160,7 @@ def simulate_and_cost(
     dt=0.025
 ,
     path_params=(40, 4, 300),
-    bounds=((0.0, 5.0), (0.0, 0.5), (0.0, 2.0)),
+    bounds=((0.0, 100), (0.0, 10), (0.0, 10)),
     other_cars_fn=None,
     verbose=False
 ):

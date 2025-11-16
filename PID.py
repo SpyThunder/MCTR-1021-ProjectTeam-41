@@ -18,8 +18,11 @@ tv_scale = 0.5    # other car speed scale (fraction of ego speed)
 
 # --- road bounds (ADD) ---
 LANE_W = 3.6
-ROAD_Y_MIN = -LANE_W/2          # bottom edge of right lane
-ROAD_Y_MAX = +3*LANE_W/2        # top edge of left lane (2 lanes total)
+# ROAD_Y_MIN = -LANE_W/2          # bottom edge of right lane
+# ROAD_Y_MAX = +3*LANE_W/2        # top edge of left lane (2 lanes total)
+
+ROAD_Y_MIN = -100          # bottom edge of right lane
+ROAD_Y_MAX = 100
 
 # optional cost kick when leaving the road
 W_BORDER = 1000.0               # weight for road-exit penalty
@@ -142,7 +145,15 @@ def straight_traffic_factory(v=4.5, lane_y=0.0, yaw=0.0, n=2, spacing=25.0):
 
 
 # ===== Define Semi-Elliptical Path =====
-def elliptical_path(a=40, b=4, num_points=300):
+def elliptical_path():
+    """
+    Simple semi-elliptical overtaking path.
+    Path type 1.
+    """
+    a = 40.0          # total x length (m)
+    b = 4.0           # peak lateral offset (m)
+    num_points = 300  # path resolution
+
     xs, ys = [], []
     for t in range(num_points):
         theta = math.pi * t / (num_points - 1)  # 0 .. pi
@@ -153,13 +164,73 @@ def elliptical_path(a=40, b=4, num_points=300):
     return xs, ys
 
 
+def medium_path():
+    """
+    Medium-complexity S-curve style path.
+    Path type 2.
+    """
+    a = 40.0          # total x length
+    b = 3.0           # lateral amplitude
+    num_points = 400  # a bit denser
+
+    xs, ys = [], []
+    for t in range(num_points):
+        s = t / (num_points - 1)   # goes 0..1
+        x = a * s
+        # smooth S-shape: start in lane, change, then flatten
+        y = b * math.sin(math.pi * (s - 0.5))
+        xs.append(x)
+        ys.append(y)
+    return xs, ys
+
+
+def complex_path():
+    """
+    Higher-complexity path with multiple bends.
+    Path type 3.
+    """
+    a = 40.0
+    b = 3.5
+    num_points = 500
+
+    xs, ys = [], []
+    for t in range(num_points):
+        s = t / (num_points - 1)  # 0..1
+        x = a * s
+        base = b * math.sin(2.0 * math.pi * s)      # main oscillation
+        wiggle = 0.7 * math.sin(6.0 * math.pi * s)  # extra complexity
+        y = base + wiggle
+        xs.append(x)
+        ys.append(y)
+    return xs, ys
+
+
+def generate_path(path_type=1):
+    """
+    Select one of the predefined paths by integer id.
+
+    path_type:
+      1 -> elliptical_path  (simple overtaking)
+      2 -> medium_path      (S-curve)
+      3 -> complex_path     (wiggly / complex)
+    """
+    if path_type == 1:
+        return elliptical_path()
+    elif path_type == 2:
+        return medium_path()
+    elif path_type == 3:
+        return complex_path()
+    else:
+        # default fallback
+        return elliptical_path()
+
+
 # ===== Simulation / cost function =====
 def simulate_and_cost(
     Kp, Ki, Kd,
     *,
-    dt=0.025
-,
-    path_params=(40, 4, 300),
+    dt=0.025,
+    path_type=3,
     bounds=((0.0, 100), (0.0, 10), (0.0, 10)),
     other_cars_fn=None,
     verbose=False
@@ -181,14 +252,23 @@ def simulate_and_cost(
     if not (kp_lo <= Kp <= kp_hi and ki_lo <= Ki <= ki_hi and kd_lo <= Kd <= kd_hi):
         return 1e12, []  # huge penalty for out-of-bounds gains
 
-    # 1) Setup simulation
+        # 1) Setup simulation
     pid = PID(Kp, Ki, Kd)
-    car = Car(x=0.0, y=0.0, yaw=0.0, velocity=5.0)
 
-    path_x, path_y = elliptical_path(*path_params)
+    # get path from selector
+    path_x, path_y = generate_path(path_type)
+    N = len(path_x)
+    total_dx = path_x[-1] - path_x[0] if N > 1 else 0.0
+
+    # choose velocity so we roughly reach the end of the path in N steps
+    v = 0.0 if N <= 1 else (0.5 + total_dx) / (dt * (N - 1))
+
+    car = Car(x=0.0, y=0.0, yaw=0.0, velocity=v)
+
     cte_history = []
     collisions = 0
     overspeed_accum = 0.0
+
 
     # === Target setup (same as visualization) ===
     target_x = target_x0
@@ -292,17 +372,24 @@ def simulate_and_cost(
 
 # ===== Visualization function (safe to import) =====
 def visualize_pid(Kp=0.05, Ki=0.0005, Kd=0.15, dt=0.025,
-                  path_params=(40, 4, 300),
+                  path_type=3,
                   show_hitboxes=True):
+
     """
     Animate a single run of the PID controller following the semi-elliptical path.
     Call visualize_pid(...) from other modules (e.g. SA.py) with optimized gains.
     """
     pid = PID(Kp, Ki, Kd)
-    car = Car(x=0.0, y=0.0, yaw=0.0, velocity=5.0)
 
-    path_x, path_y = elliptical_path(*path_params)
+    # get path and set speed to match its length
+    path_x, path_y = generate_path(path_type)
+    N = len(path_x)
+    total_dx = path_x[-1] - path_x[0] if N > 1 else 0.0
+    v = 0.0 if N <= 1 else (0.5 + total_dx) / (dt * (N - 1))
+
+    car = Car(x=0.0, y=0.0, yaw=0.0, velocity=v)
     car_x, car_y = [car.x], [car.y]
+
 
     target_v_scale = tv_scale
     target_x = target_x0

@@ -30,7 +30,7 @@ def genetic_algorithm(
 
     history = []
 
-    for gen in range(generations):
+    for gen in range(generations+1):
 
         # ---- Evaluate population ----
         scored = []
@@ -46,7 +46,7 @@ def genetic_algorithm(
         print(f"Generation {gen}: Best cost = {best_cost:.6f} Gains = {best_ind}")
         costs = [simulate_and_cost(*ind, other_cars_fn=other_cars_fn)[0] for ind in population]
         # ---- Visualization ----
-        if visualize_every and gen % visualize_every == 0:
+        if (visualize_every and gen % visualize_every == 0) or (gen==generations):
             plot_population_3d_enhanced(population, costs,
                                         elite_count=int(elitism_ratio * population_size),
                                         title=f"Generation {gen} population")
@@ -159,15 +159,15 @@ def default_suite():
         other_cars_fn=None,
         ga_params={
             "pop_size": 50,
-            "generations": 80,
+            "generations": 100,
             "elite_frac": 0.20,
             "crossover_frac": 0.60,
             "mutation_frac": 0.20,
             "arith_alpha": 0.5,
-            "mutation_scale": (0.08, 0.08, 0.08),
+            "mutation_scale": (20, 2, 5),
             "tournament_k": 3,
             "rng_seed": 0,
-            "visualize_every": 10,
+            "visualize_every": 50,
             "visualize_blocking": True,
         }
     )
@@ -178,16 +178,16 @@ def default_suite():
         path_params=(40, 8, 300),
         other_cars_fn=None,
         ga_params={
-            "pop_size": 60,
-            "generations": 120,
+            "pop_size": 100,
+            "generations": 200,
             "elite_frac": 0.20,
             "crossover_frac": 0.60,
             "mutation_frac": 0.20,
             "arith_alpha": 0.5,
-            "mutation_scale": (0.10, 0.10, 0.10),  # FIXED
+            "mutation_scale": (20, 2, 5),  # FIXED
             "tournament_k": 3,
             "rng_seed": 1,
-            "visualize_every": 10,
+            "visualize_every": 100,
             "visualize_blocking": True,
         }
     )
@@ -199,16 +199,16 @@ def default_suite():
         path_params=(40, 4, 300),
         other_cars_fn=other_fn,
         ga_params={
-            "pop_size": 70,
-            "generations": 140,
-            "elite_frac": 0.20,
-            "crossover_frac": 0.60,
-            "mutation_frac": 0.20,
+            "pop_size": 50,
+            "generations": 100,
+            "elite_frac": 0.10,
+            "crossover_frac": 0.50,
+            "mutation_frac": 0.40,
             "arith_alpha": 0.5,
-            "mutation_scale": (0.10, 0.10, 0.10),  # FIXED
+            "mutation_scale": (20, 2, 5),  # FIXED
             "tournament_k": 4,
             "rng_seed": 2,
-            "visualize_every": 10,
+            "visualize_every": 50,
             "visualize_blocking": True,
         }
     )

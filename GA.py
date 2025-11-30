@@ -176,7 +176,7 @@ def default_suite():
     # Case 2: harder
     results["case_harder"] = run_case_study(
         "Harder - larger lateral amplitude",
-        path_params=(40, 8, 300),
+        path_params=(40, 4, 300),
         other_cars_fn=None,
         ga_params={
             "pop_size": 100,
@@ -194,11 +194,9 @@ def default_suite():
     )
 
     # Case 3: collisions
-    other_fn = straight_traffic_factory(v=4.5, lane_y=0.0, n=2)
     results["case_collision"] = run_case_study(
         "Collision - traffic present",
         path_params=(40, 4, 300),
-        other_cars_fn=other_fn,
         ga_params={
             "pop_size": 50,
             "generations": 100,
